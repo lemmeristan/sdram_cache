@@ -1,0 +1,3 @@
+ghdl -fexplicit --syn-binding -frelaxed --ieee=synopsys hdmi 
+synth_ecp5 -noccu2 -nomux -nodram -json hdmi.json
+
