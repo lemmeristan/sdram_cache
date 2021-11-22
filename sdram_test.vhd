@@ -15,7 +15,8 @@ USE work.bebichiken.ALL;
 
 ENTITY sdram_test IS
     GENERIC (
-        num_ports : INTEGER := 1
+        num_ports : INTEGER := 1;
+        base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"00000000"
 
     );
 
@@ -42,8 +43,8 @@ ARCHITECTURE Behavioral OF sdram_test IS
     COMPONENT sdram_cache IS
 
         GENERIC (
-            base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"D0000000";
-            clk_freq : NATURAL := 25;
+            base_address : STD_LOGIC_VECTOR(31 DOWNTO 0);
+            clk_freq : NATURAL;
             CAS_LATENCY : NATURAL := 2; -- 2=below 133MHz, 3=above 133MHz
 
             -- timing values (in nanoseconds)
@@ -84,12 +85,14 @@ ARCHITECTURE Behavioral OF sdram_test IS
             mem_wdata : IN word_array_t(num_ports - 1 DOWNTO 0);
             mem_rdata : OUT word_array_t(num_ports - 1 DOWNTO 0);
             mem_rdy : OUT STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0);
-            mem_wack : OUT STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0)
+            mem_wack : OUT STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0);
+
+            addr_valid : OUT STD_LOGIC
         );
     END COMPONENT;
-    SIGNAL rst, state, n_state, reset_address, inc_address, inc_errors : STD_LOGIC;
+    SIGNAL rst, state, n_state, reset_address, inc_address, inc_errors, addr_valid : STD_LOGIC;
     SIGNAL mem_clk, mem_we, mem_re, mem_rdy, mem_wack : STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0);
-    SIGNAL mem_addr, mem_wdata, mem_rdata : word_array_t(num_ports - 1 DOWNTO 0);
+    SIGNAL mem_addr, n_mem_addr, mem_wdata, mem_rdata : word_array_t(num_ports - 1 DOWNTO 0);
     SIGNAL mem_width : width_array_t(num_ports - 1 DOWNTO 0);
     SIGNAL errors : STD_LOGIC_VECTOR(7 DOWNTO 0);
 BEGIN
@@ -100,7 +103,9 @@ BEGIN
     sim : sdram_cache
 
     GENERIC MAP(
-        num_ports => num_ports
+        num_ports => num_ports,
+        base_address => base_address,
+        clk_freq => 25
     )
 
     PORT MAP(
@@ -121,38 +126,43 @@ BEGIN
         sdram_cas_n => sdram_casn,
         sdram_we_n => sdram_wen,
         sdram_dqml => sdram_dqm(0),
-        sdram_dqmh => sdram_dqm(1)
+        sdram_dqmh => sdram_dqm(1),
+        addr_valid => addr_valid
 
     );
     PROCESS (state, mem_wack, mem_rdy, mem_rdata, mem_addr)
     BEGIN
         n_state <= state;
-        reset_address <= '0';
+
         inc_address <= '0';
         mem_we <= (OTHERS => '0');
         mem_re <= (OTHERS => '0');
         mem_wdata <= (OTHERS => (OTHERS => '0'));
         inc_errors <= '0';
-
+        n_mem_addr(0) <= mem_addr(0);
         IF state = '0' THEN
-            mem_we(0) <= '1';
+            mem_we <= (OTHERS => '1');
 
-            mem_wdata(0) <= mem_addr(0);
+            mem_wdata(0) <= mem_addr(0); -- (OTHERS => '0'); 
+            inc_address <= mem_wack(0);
 
             IF (mem_wack(0) = '1') THEN
-                IF (mem_addr(0) = X"D1FFFFFC") THEN
-                    reset_address <= '1';
+                IF (mem_addr(0) >= X"0000FFF8") THEN
+                    n_mem_addr(0) <= base_address;
                     n_state <= '1';
                 ELSE
-                    inc_address <= mem_wack(0);
+                    n_mem_addr(0) <= mem_addr(0) + X"00000004";
                 END IF;
             END IF;
         ELSE
             mem_re(0) <= '1';
 
             IF (mem_rdy(0) = '1') THEN
-                inc_address <= mem_rdy(0);
-                IF (mem_rdata /= mem_addr) THEN
+                IF (mem_addr(0) < X"00FFFFFC") THEN
+                    n_mem_addr(0) <= mem_addr(0) + X"00000004";
+
+                END IF;
+                IF (mem_rdata(0) /= mem_addr(0)) THEN --  X"FFFFFFFF") THEN  --X"00000000") THEN --
                     inc_errors <= '1';
                 END IF;
             END IF;
@@ -162,16 +172,13 @@ BEGIN
     PROCESS (rst, clk_25mhz)
     BEGIN
         IF rst = '1' THEN
-            mem_addr <= (OTHERS => X"D0000000");
+            mem_addr <= (OTHERS => base_address);
             state <= '0';
             errors <= (OTHERS => '0');
         ELSIF rising_edge(clk_25mhz) THEN
             state <= n_state;
-            IF reset_address = '1' THEN
-                mem_addr(0) <= X"D0000000";
-            ELSIF inc_address = '1' THEN
-                mem_addr(0) <= mem_addr(0) + X"00000004";
-            END IF;
+
+            mem_addr(0) <= n_mem_addr(0);
 
             IF inc_errors = '1' THEN
                 IF errors /= X"FF" THEN
@@ -181,8 +188,19 @@ BEGIN
         END IF;
     END PROCESS;
 
-    led(3 DOWNTO 0) <= errors(3 DOWNTO 0);
-    led(6) <= rst;
+    --led(3 DOWNTO 0) <= errors(3 DOWNTO 0);
+    --    led(5) <= addr_valid;
+    --    led(6) <= rst;
+    --led(6) <= mem_wack(0);
     led(7) <= state;
+    --led(6 DOWNTO 0) <= errors(6 DOWNTO 0);
+
+    led(6 DOWNTO 0) <= mem_rdata(0)(30 DOWNTO 24);
+
+    --led <= errors;
+
+    --led <= mem_addr(0)(20 DOWNTO 13);
+
+    -- to do: use dip switches for debugging
 
 END Behavioral;

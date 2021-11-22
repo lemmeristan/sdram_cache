@@ -38,7 +38,7 @@ USE work.bebichiken.ALL;
 
 ENTITY sdram_cache IS
     GENERIC (
-        base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"D0000000";
+        base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"00000000";
         clk_freq : NATURAL := 100;
         CAS_LATENCY : NATURAL := 2; -- 2=below 133MHz, 3=above 133MHz
 
@@ -81,7 +81,8 @@ ENTITY sdram_cache IS
         mem_wdata : IN word_array_t(num_ports - 1 DOWNTO 0);
         mem_rdata : OUT word_array_t(num_ports - 1 DOWNTO 0);
         mem_rdy : OUT STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0);
-        mem_wack : OUT STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0)
+        mem_wack : OUT STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0);
+        addr_valid : OUT STD_LOGIC
     );
 END sdram_cache;
 
@@ -169,7 +170,7 @@ BEGIN
     BEGIN
         sdram_a <= (OTHERS => '0');
         sdram_ba <= (OTHERS => '0');
-        sdram_dq <= (OTHERS => '0');
+        sdram_dq <= (OTHERS => 'Z');
 
         sdram_cke <= '1';
         cmd <= CMD_NOP;
@@ -248,13 +249,13 @@ BEGIN
                 CASE wait_counter IS
                     WHEN 0 =>
                         cmd <= CMD_ACTIVE;
-                        sdram_a <= current_address(current_port_selection)(9 DOWNTO 0) & row;
-                        sdram_ba <= current_address(current_port_selection)(11 DOWNTO 10);
+                        sdram_a <= current_address(current_port_selection)(22 DOWNTO 13) & row;
+                        sdram_ba <= current_address(current_port_selection)(24 DOWNTO 23);
 
                     WHEN 2 =>
                         cmd <= CMD_WRITE;
-                        sdram_a <= (OTHERS => '0');
-                        sdram_ba <= current_address(current_port_selection)(11 DOWNTO 10);
+                        sdram_a(10) <= '1'; -- auto precharge
+                        sdram_ba <= current_address(current_port_selection)(24 DOWNTO 23);
                         sdram_dq <= DPRAM_DOUT_SDRAM(current_port_selection)(15 DOWNTO 0);
                         DPRAM_ADDR_SDRAM(current_port_selection)(10 DOWNTO 8) <= row;
                         DPRAM_ADDR_SDRAM(current_port_selection)(7 DOWNTO 0) <= X"00";
@@ -303,13 +304,14 @@ BEGIN
                 CASE wait_counter IS
                     WHEN 0 =>
                         cmd <= CMD_ACTIVE;
-                        sdram_a <= current_address(current_port_selection)(9 DOWNTO 0) & row;
-                        sdram_ba <= current_address(current_port_selection)(11 DOWNTO 10);
+                        sdram_a <= current_address(current_port_selection)(22 DOWNTO 13) & row;
+                        sdram_ba <= current_address(current_port_selection)(24 DOWNTO 23);
 
                     WHEN 2 =>
                         cmd <= CMD_READ;
-                        sdram_a <= (OTHERS => '0'); -- starting column - might be a good idea to use non-zero value for faster access
-                        sdram_ba <= current_address(current_port_selection)(11 DOWNTO 10);
+                        sdram_a(10) <= '1'; -- auto precharge
+                        --                       sdram_a <= (OTHERS => '0'); -- starting column - might be a good idea to use non-zero value for faster access
+                        sdram_ba <= current_address(current_port_selection)(24 DOWNTO 23);
                     WHEN 4 TO 515 =>
                         DPRAM_ADDR_SDRAM(current_port_selection)(10 DOWNTO 8) <= row;
                         DPRAM_ADDR_SDRAM(current_port_selection)(7 DOWNTO 0) <= STD_LOGIC_VECTOR(to_unsigned(((wait_counter - 4)/2), 8));
@@ -360,7 +362,7 @@ BEGIN
             current_port_selection <= 0;
             DPRAM_WE_CPU <= (OTHERS => '0');
             mem_rdy <= (OTHERS => '0');
-            mem_wack <= (OTHERS => '0');
+            --mem_wack <= (OTHERS => '0');
             DPRAM_WE_SDRAM <= (OTHERS => '0');
             DPRAM_DIN_SDRAM <= (OTHERS => (OTHERS => '0'));
             return_state <= INIT;
@@ -375,7 +377,7 @@ BEGIN
             DPRAM_DIN_SDRAM <= n_DPRAM_DIN_SDRAM;
             mem_rdy <= (OTHERS => '0');
             DPRAM_WE_CPU <= (OTHERS => '0');
-            mem_wack <= (OTHERS => '0');
+            --mem_wack <= (OTHERS => '0');
             FOR i IN 0 TO num_ports - 1 LOOP
 
                 IF update_current_address(i) = '1' THEN
@@ -391,7 +393,7 @@ BEGIN
                 IF (fill_count(i) >= mem_addr(i)(12 DOWNTO 2)) AND (fill_count_valid(i) = '1') AND (cache_miss(i) = '0') AND (address_valid(i) = '1') THEN
                     DPRAM_WE_CPU(i) <= mem_we(i);
                     mem_rdy(i) <= mem_re(i);
-                    mem_wack(i) <= mem_we(i);
+                    --mem_wack(i) <= mem_we(i);
                 END IF;
 
             END LOOP;
@@ -439,7 +441,7 @@ BEGIN
             ResetA => '0', ResetB => '0',
             QA => DPRAM_DOUT_SDRAM(i), QB => DPRAM_DOUT_CPU(i)
         );
-        --mem_wack(i) <= DPRAM_WE_CPU(i);
+        mem_wack(i) <= DPRAM_WE_CPU(i);
         mem_rdata(i) <= DPRAM_DOUT_CPU(i);
         address_valid(i) <= '1' WHEN mem_addr(i)(31 DOWNTO 25) = base_address(31 DOWNTO 25) ELSE
         '0'; -- 0xD0000000 to 0xD2000000
@@ -489,5 +491,6 @@ BEGIN
         END PROCESS;
 
     END GENERATE gen_dpram;
+    addr_valid <= address_valid(0);
 
 END behavioural;
