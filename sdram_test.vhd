@@ -95,6 +95,7 @@ ARCHITECTURE Behavioral OF sdram_test IS
     SIGNAL mem_addr, n_mem_addr, mem_wdata, mem_rdata : word_array_t(num_ports - 1 DOWNTO 0);
     SIGNAL mem_width : width_array_t(num_ports - 1 DOWNTO 0);
     SIGNAL errors : STD_LOGIC_VECTOR(7 DOWNTO 0);
+    SIGNAL p_btn : STD_LOGIC;
 BEGIN
 
     mem_clk <= (OTHERS => clk_25mhz);
@@ -147,7 +148,7 @@ BEGIN
             inc_address <= mem_wack(0);
 
             IF (mem_wack(0) = '1') THEN
-                IF (mem_addr(0) >= X"0000FFF8") THEN
+                IF (mem_addr(0) >= X"01FFFFF8") THEN
                     n_mem_addr(0) <= base_address;
                     n_state <= '1';
                 ELSE
@@ -158,7 +159,7 @@ BEGIN
             mem_re(0) <= '1';
 
             IF (mem_rdy(0) = '1') THEN
-                IF (mem_addr(0) < X"00FFFFFC") THEN
+                IF (mem_addr(0) < X"01FFFFF8") AND (btn(1) /= p_btn) THEN
                     n_mem_addr(0) <= mem_addr(0) + X"00000004";
 
                 END IF;
@@ -175,6 +176,7 @@ BEGIN
             mem_addr <= (OTHERS => base_address);
             state <= '0';
             errors <= (OTHERS => '0');
+            p_btn <= '0';
         ELSIF rising_edge(clk_25mhz) THEN
             state <= n_state;
 
@@ -185,6 +187,8 @@ BEGIN
                     errors <= errors + X"01";
                 END IF;
             END IF;
+
+            p_btn <= btn(1);
         END IF;
     END PROCESS;
 
@@ -195,7 +199,7 @@ BEGIN
     led(7) <= state;
     --led(6 DOWNTO 0) <= errors(6 DOWNTO 0);
 
-    led(6 DOWNTO 0) <= mem_rdata(0)(30 DOWNTO 24);
+    led(6 DOWNTO 0) <= mem_rdata(0)(6 DOWNTO 0);
 
     --led <= errors;
 
