@@ -146,7 +146,7 @@ ARCHITECTURE behavioural OF sdram_cache IS
 
     SIGNAL reset_dirty, dirty, DPRAM_WE_CPU, update_current_address, inc_fill_count, reset_fill_count : STD_LOGIC_VECTOR(num_ports - 1 DOWNTO 0);
     SIGNAL reset_wait_counter : STD_LOGIC;
-    SIGNAL DPRAM_ADDR_SDRAM, n_DPRAM_ADDR_SDRAM, fill_count : dpram_address_array_t(num_ports - 1 DOWNTO 0); --std_logic_vector(10 downto 0); -- change this
+    SIGNAL DPRAM_ADDR_SDRAM, n_DPRAM_ADDR_SDRAM, n_fill_count, fill_count : dpram_address_array_t(num_ports - 1 DOWNTO 0); --std_logic_vector(10 downto 0); -- change this
     SIGNAL DPRAM_DOUT_SDRAM, DPRAM_DIN_SDRAM, n_DPRAM_DIN_SDRAM, DPRAM_DOUT_CPU, DPRAM_DIN_CPU : word_array_t(num_ports - 1 DOWNTO 0);
     SIGNAL current_address : word_array_t(num_ports - 1 DOWNTO 0); -- := (OTHERS => (OTHERS => '1')); -- 24 downto 13
 
@@ -195,6 +195,7 @@ BEGIN
         n_DPRAM_WE_SDRAM <= (OTHERS => '0');
         n_return_state <= return_state;
 
+        n_fill_count <= fill_count;
         n_fill_count_valid <= fill_count_valid;
         reset_wait_counter <= '0';
         n_row <= row;
@@ -309,7 +310,8 @@ BEGIN
                         IF row = "111" THEN
                             n_state <= FILL_CACHE;
                             n_row <= "000";
-                            reset_fill_count(current_port_selection) <= '1';
+                            --reset_fill_count(current_port_selection) <= '1';
+                            n_fill_count(current_port_selection) <= (OTHERS => '0');
                             n_fill_count_valid(current_port_selection) <= '0';
                             FOR i IN 0 TO num_ports - 1 LOOP
                                 IF current_address(current_port_selection)(24 DOWNTO 13) = current_address(i)(24 DOWNTO 13) THEN
@@ -360,7 +362,8 @@ BEGIN
                             n_DPRAM_DIN_SDRAM(current_port_selection)(31 DOWNTO 16) <= sdram_dq;
                             n_DPRAM_WE_SDRAM(current_port_selection) <= '1';
                             IF fill_count(current_port_selection) < "11111111111" THEN
-                                inc_fill_count(current_port_selection) <= '1'; --fill_count_valid(current_port_selection);
+                                --inc_fill_count(current_port_selection) <= '1'; --fill_count_valid(current_port_selection);
+                                n_fill_count(current_port_selection) <= fill_count(current_port_selection) + "00000000001";
                             END IF;
                             n_fill_count_valid(current_port_selection) <= '1';
                             update_current_address(current_port_selection) <= '1';
@@ -405,7 +408,7 @@ BEGIN
             row <= "000";
             current_port_selection <= 0;
             DPRAM_WE_CPU <= (OTHERS => '0');
-            mem_rdy <= (OTHERS => '0');
+            --mem_rdy <= (OTHERS => '0');
             --mem_wack <= (OTHERS => '0');
             DPRAM_WE_SDRAM <= (OTHERS => '0');
             DPRAM_DIN_SDRAM <= (OTHERS => (OTHERS => '0'));
@@ -424,7 +427,7 @@ BEGIN
             state <= n_state;
             return_state <= n_return_state;
             DPRAM_DIN_SDRAM <= n_DPRAM_DIN_SDRAM;
-            mem_rdy <= (OTHERS => '0');
+            --mem_rdy <= (OTHERS => '0');
             DPRAM_WE_CPU <= (OTHERS => '0');
             mem_wack <= n_mem_wack;
             dirty <= n_dirty;
@@ -435,17 +438,22 @@ BEGIN
                     current_address(i) <= mem_addr(i);
                 END IF;
 
-                IF inc_fill_count(i) = '1' THEN
-                    fill_count(i) <= fill_count(i) + "00000000001";
-                END IF;
+                --                IF reset_fill_count(i) = '1' THEN
+                --                    fill_count(i) <= (OTHERS => '0');
+                --                ELSIF inc_fill_count(i) = '1' THEN
+                --                    fill_count(i) <= fill_count(i) + "00000000001";
+                --                END IF;
 
+                fill_count <= n_fill_count;
                 fill_count_valid(i) <= n_fill_count_valid(i);
 
-                IF ((fill_count(i) > mem_addr(i)(12 DOWNTO 2)) OR ((fill_count(i) = mem_addr(i)(12 DOWNTO 2)) AND (fill_count_valid(i) = '1'))) AND (cache_miss(i) = '0') AND (address_valid(i) = '1') THEN
-                    DPRAM_WE_CPU(i) <= mem_we(i);
-                    mem_rdy(i) <= mem_re(i);
-                    --mem_wack(i) <= mem_we(i);
-                END IF;
+                --                IF ((fill_count(i) > mem_addr(i)(12 DOWNTO 2)) OR ((fill_count(i) = mem_addr(i)(12 DOWNTO 2)) AND (fill_count_valid(i) = '1'))) AND (cache_miss(i) = '0') AND (address_valid(i) = '1') THEN
+
+                --IF (cache_miss(i) = '0') AND (address_valid(i) = '1') THEN
+                --IF (mem_addr(i)(12 DOWNTO 2) < fill_count(i)) AND (cache_miss(i) = '0') AND (address_valid(i) = '1') THEN
+                --DPRAM_WE_CPU(i) <= mem_we(i); -- not coherent
+                --mem_rdy(i) <= '1'; --mem_re(i);
+                --END IF;
 
             END LOOP;
 
@@ -465,6 +473,14 @@ BEGIN
 
         END IF;
     END PROCESS;
+
+    rdygen : FOR i IN 0 TO num_ports - 1 GENERATE
+        --mem_rdy(i) <= mem_re(i) WHEN (mem_addr(i)(12 DOWNTO 2) < fill_count(i)) AND (cache_miss(i) = '0') AND (address_valid(i) = '1') ELSE '0';
+        -- mem_rdy(i) <= mem_re(i) WHEN (mem_addr(i)(12 DOWNTO 2) <= fill_count(i)) AND (cache_miss(i) = '0') AND (address_valid(i) = '1') ELSE '0';
+        mem_rdy(i) <= mem_re(i) WHEN (DPRAM_WE_SDRAM(i) = '0') AND (cache_miss(i) = '0') AND (address_valid(i) = '1') ELSE
+        '0'; -- works but is not fully correct
+
+    END GENERATE rdygen;
 
     -- set wait signals
     refresh_done <= '1' WHEN wait_counter = REFRESH_WAIT - 1 ELSE

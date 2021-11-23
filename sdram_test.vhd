@@ -15,7 +15,7 @@ USE work.bebichiken.ALL;
 
 ENTITY sdram_test IS
     GENERIC (
-        num_ports : INTEGER := 1;
+        num_ports : INTEGER := 2;
         base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"00000000"
 
     );
@@ -131,56 +131,48 @@ BEGIN
         addr_valid => addr_valid
 
     );
-    PROCESS (state, mem_wack, mem_rdy, mem_rdata, mem_addr)
+
+    PROCESS (state, mem_wack, mem_rdy, mem_rdata, mem_addr, btn, p_btn)
     BEGIN
         n_state <= state;
 
-        inc_address <= '0';
         mem_we <= (OTHERS => '0');
         mem_re <= (OTHERS => '0');
         mem_wdata <= (OTHERS => (OTHERS => '0'));
-        inc_errors <= '0';
-        n_mem_addr(0) <= mem_addr(0);
-        IF state = '0' THEN
-            mem_we <= (OTHERS => '1');
 
-            mem_wdata(0) <= mem_addr(0); -- (OTHERS => '0'); 
-            inc_address <= mem_wack(0);
+        n_mem_addr <= mem_addr;
 
+        mem_wdata(0) <= mem_addr(0); -- (OTHERS => '0'); 
+        IF (mem_addr(0) < X"01FFFFF8") THEN
+            mem_we(0) <= '1';
             IF (mem_wack(0) = '1') THEN
-                IF (mem_addr(0) >= X"01FFFFF8") THEN
-                    n_mem_addr(0) <= base_address;
-                    n_state <= '1';
-                ELSE
-                    n_mem_addr(0) <= mem_addr(0) + X"00000004";
-                END IF;
-            END IF;
-        ELSE
-            mem_re(0) <= '1';
-
-            IF (mem_rdy(0) = '1') THEN
-                IF (mem_addr(0) < X"01FFFFF8") AND (btn(1) /= p_btn) THEN
-                    n_mem_addr(0) <= mem_addr(0) + X"00000004";
-
-                END IF;
-                IF (mem_rdata(0) /= mem_addr(0)) THEN --  X"FFFFFFFF") THEN  --X"00000000") THEN --
-                    inc_errors <= '1';
-                END IF;
+                n_mem_addr(0) <= mem_addr(0) + X"00000004";
             END IF;
         END IF;
+
+        IF (mem_addr(1) < X"01FFFFF8") THEN
+            mem_re(1) <= '1';
+            IF (mem_rdy(1) = '1') AND (btn(1) /= p_btn) THEN
+                n_mem_addr(1) <= mem_addr(1) + X"00000004";
+            END IF;
+        ELSE
+            n_mem_addr(1) <= base_address;
+        END IF;
+
     END PROCESS;
 
     PROCESS (rst, clk_25mhz)
     BEGIN
         IF rst = '1' THEN
             mem_addr <= (OTHERS => base_address);
+            mem_addr(1) <= X"000000F8";
             state <= '0';
             errors <= (OTHERS => '0');
             p_btn <= '0';
         ELSIF rising_edge(clk_25mhz) THEN
             state <= n_state;
 
-            mem_addr(0) <= n_mem_addr(0);
+            mem_addr <= n_mem_addr;
 
             IF inc_errors = '1' THEN
                 IF errors /= X"FF" THEN
@@ -196,10 +188,14 @@ BEGIN
     --    led(5) <= addr_valid;
     --    led(6) <= rst;
     --led(6) <= mem_wack(0);
-    led(7) <= state;
+    led(7) <= mem_rdy(0);
+    led(6) <= mem_rdy(1);
+    led(5) <= mem_we(0);
     --led(6 DOWNTO 0) <= errors(6 DOWNTO 0);
 
-    led(6 DOWNTO 0) <= mem_rdata(0)(6 DOWNTO 0);
+    led(4 DOWNTO 0) <= mem_rdata(1)(8 DOWNTO 4);
+
+    --led(5 DOWNTO 0) <= mem_addr(1)(5 DOWNTO 0);
 
     --led <= errors;
 
