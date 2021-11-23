@@ -39,6 +39,7 @@ USE work.bebichiken.ALL;
 
 ENTITY sdram_cache IS
     GENERIC (
+        vendor : STD_LOGIC := '0'; -- 0 => xilinx, 1 => lattice
         base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"00000000";
         clk_freq : NATURAL := 100;
         CAS_LATENCY : NATURAL := 2; -- 2=below 133MHz, 3=above 133MHz
@@ -166,20 +167,20 @@ ARCHITECTURE behavioural OF sdram_cache IS
         );
     END COMPONENT;
 
-    -- COMPONENT blk_mem_gen_0 IS
-    --     PORT (
-    --         clka  : IN STD_LOGIC;
-    --         wea   : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
-    --         addra : IN STD_LOGIC_VECTOR(10 DOWNTO 0);
-    --         dina  : IN STD_LOGIC_VECTOR(31 DOWNTO 0);
-    --         douta : OUT STD_LOGIC_VECTOR(31 DOWNTO 0);
-    --         clkb  : IN STD_LOGIC;
-    --         web   : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
-    --         addrb : IN STD_LOGIC_VECTOR(10 DOWNTO 0);
-    --         dinb  : IN STD_LOGIC_VECTOR(31 DOWNTO 0);
-    --         doutb : OUT STD_LOGIC_VECTOR(31 DOWNTO 0)
-    --     );
-    -- END COMPONENT;
+    COMPONENT blk_mem_gen_0 IS
+        PORT (
+            clka : IN STD_LOGIC;
+            wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+            addra : IN STD_LOGIC_VECTOR(10 DOWNTO 0);
+            dina : IN STD_LOGIC_VECTOR(31 DOWNTO 0);
+            douta : OUT STD_LOGIC_VECTOR(31 DOWNTO 0);
+            clkb : IN STD_LOGIC;
+            web : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+            addrb : IN STD_LOGIC_VECTOR(10 DOWNTO 0);
+            dinb : IN STD_LOGIC_VECTOR(31 DOWNTO 0);
+            doutb : OUT STD_LOGIC_VECTOR(31 DOWNTO 0)
+        );
+    END COMPONENT;
 
 BEGIN
     async : PROCESS (state, wait_counter, refresh_done, should_refresh, return_state, fill_count, fill_count_valid, row, mem_addr, mem_we, current_address, dirty, DPRAM_DOUT_SDRAM, sdram_dq, DPRAM_DIN_SDRAM, current_port_selection)
@@ -498,29 +499,35 @@ BEGIN
 
     gen_dpram : FOR i IN 0 TO num_ports - 1 GENERATE
 
-        inst_dpram : dpram1
-        PORT MAP(
-            DataInA => DPRAM_DIN_SDRAM(i), DataInB => DPRAM_DIN_CPU(i),
-            AddressA => DPRAM_ADDR_SDRAM(i), AddressB => mem_addr(i)(12 DOWNTO 2),
-            ClockA => clk, ClockB => mem_clk(i),
-            ClockEnA => '1', ClockEnB => '1',
-            WrA => DPRAM_WE_SDRAM(i), WrB => DPRAM_WE_CPU(i),
-            ResetA => '0', ResetB => '0',
-            QA => DPRAM_DOUT_SDRAM(i), QB => DPRAM_DOUT_CPU(i)
-        );
-        -- inst_dpram : blk_mem_gen_0
-        --     PORT MAP(
-        --         clka   => clk,
-        --         wea(0) => DPRAM_WE_SDRAM(i),
-        --         addra  => DPRAM_ADDR_SDRAM(i),
-        --         dina   => DPRAM_DIN_SDRAM(i),
-        --         douta  => DPRAM_DOUT_SDRAM(i),
-        --         clkb   => mem_clk(i),
-        --         web(0) => DPRAM_WE_CPU(i),
-        --         addrb  => mem_addr(i)(12 DOWNTO 2),
-        --         dinb   => DPRAM_DIN_CPU(i),
-        --         doutb  => DPRAM_DOUT_CPU(i)
-        --     );
+        lattice : IF vendor = '1' GENERATE
+            inst_dpram : dpram1
+            PORT MAP(
+                DataInA => DPRAM_DIN_SDRAM(i), DataInB => DPRAM_DIN_CPU(i),
+                AddressA => DPRAM_ADDR_SDRAM(i), AddressB => mem_addr(i)(12 DOWNTO 2),
+                ClockA => clk, ClockB => mem_clk(i),
+                ClockEnA => '1', ClockEnB => '1',
+                WrA => DPRAM_WE_SDRAM(i), WrB => DPRAM_WE_CPU(i),
+                ResetA => '0', ResetB => '0',
+                QA => DPRAM_DOUT_SDRAM(i), QB => DPRAM_DOUT_CPU(i)
+            );
+        END GENERATE lattice;
+
+        xilinx : IF vendor = '0' GENERATE
+            inst_dpram : blk_mem_gen_0
+            PORT MAP(
+                clka => clk,
+                wea(0) => DPRAM_WE_SDRAM(i),
+                addra => DPRAM_ADDR_SDRAM(i),
+                dina => DPRAM_DIN_SDRAM(i),
+                douta => DPRAM_DOUT_SDRAM(i),
+                clkb => mem_clk(i),
+                web(0) => DPRAM_WE_CPU(i),
+                addrb => mem_addr(i)(12 DOWNTO 2),
+                dinb => DPRAM_DIN_CPU(i),
+                doutb => DPRAM_DOUT_CPU(i)
+            );
+        END GENERATE xilinx;
+
         --mem_wack(i)      <= DPRAM_WE_CPU(i);
         mem_rdata(i) <= DPRAM_DOUT_CPU(i);
         address_valid(i) <= '1' WHEN mem_addr(i)(31 DOWNTO 25) = base_address(31 DOWNTO 25) ELSE

@@ -15,6 +15,7 @@ USE work.bebichiken.ALL;
 
 ENTITY sdram_test IS
     GENERIC (
+        vendor : STD_LOGIC := '1';
         num_ports : INTEGER := 2;
         base_address : STD_LOGIC_VECTOR(31 DOWNTO 0) := X"00000000"
 
@@ -43,6 +44,7 @@ ARCHITECTURE Behavioral OF sdram_test IS
     COMPONENT sdram_cache IS
 
         GENERIC (
+            vendor : STD_LOGIC;
             base_address : STD_LOGIC_VECTOR(31 DOWNTO 0);
             clk_freq : NATURAL;
             CAS_LATENCY : NATURAL := 2; -- 2=below 133MHz, 3=above 133MHz
@@ -104,6 +106,7 @@ BEGIN
     sim : sdram_cache
 
     GENERIC MAP(
+        vendor => vendor,
         num_ports => num_ports,
         base_address => base_address,
         clk_freq => 25
