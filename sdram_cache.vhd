@@ -246,32 +246,36 @@ BEGIN
                 IF should_refresh = '1' THEN
                     n_state <= REFRESH;
                     n_return_state <= IDLE;
+                    -- best speed imo
                 ELSIF mem_addr(current_port_selection)(24 DOWNTO 13) /= current_address(current_port_selection)(24 DOWNTO 13) THEN
                     n_row <= "000";
                     IF dirty(current_port_selection) = '1' THEN
-                        n_state <= FLUSH_CACHE;
+                        n_state <= FLUSH_CACHE; -- to do: flush ALL caches at the same time
                     ELSE
                         n_state <= FILL_CACHE;
                     END IF;
+                ELSIF mem_we /= "00" THEN
+
+                    FOR j IN 0 TO num_ports - 1 LOOP
+                        IF mem_we(j) = '1' THEN
+                            FOR i IN 0 TO num_ports - 1 LOOP
+                                IF mem_addr(j)(24 DOWNTO 13) = current_address(i)(24 DOWNTO 13) THEN
+                                    n_dirty(i) <= '1';
+                                    n_DPRAM_WE_SDRAM(i) <= '1';
+                                    n_DPRAM_ADDR_SDRAM(i) <= mem_addr(j)(12 DOWNTO 2);
+                                    n_DPRAM_DIN_SDRAM(i) <= mem_wdata(j);
+                                    n_mem_wack(i) <= '1';
+                                END IF;
+                            END LOOP;
+                        END IF;
+                    END LOOP;
+
+                ELSIF current_port_selection < num_ports - 1 THEN
+                    n_current_port_selection <= current_port_selection + 1;
+
                 ELSE
-                    IF mem_we(current_port_selection) = '1' THEN
-                        FOR i IN 0 TO num_ports - 1 LOOP
-                            IF mem_addr(current_port_selection)(24 DOWNTO 13) = current_address(i)(24 DOWNTO 13) THEN
-                                n_dirty(i) <= '1';
-                                n_DPRAM_WE_SDRAM(i) <= '1';
-                                n_DPRAM_ADDR_SDRAM(i) <= mem_addr(current_port_selection)(12 DOWNTO 2);
-                                n_DPRAM_DIN_SDRAM(i) <= mem_wdata(current_port_selection);
-                                n_mem_wack(i) <= '1';
-                            END IF;
-                        END LOOP;
+                    n_current_port_selection <= 0;
 
-                    ELSIF current_port_selection < num_ports - 1 THEN
-                        n_current_port_selection <= current_port_selection + 1;
-
-                    ELSE
-                        n_current_port_selection <= 0;
-
-                    END IF;
                 END IF;
 
             WHEN FLUSH_CACHE =>
